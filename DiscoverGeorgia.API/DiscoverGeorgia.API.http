@@ -1,0 +1,6 @@
+@DiscoverGeorgia.API_HostAddress = http://localhost:5202
+
+GET {{DiscoverGeorgia.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
