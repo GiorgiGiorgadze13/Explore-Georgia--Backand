@@ -1,7 +1,7 @@
-﻿using DiscoverGeorgia.API.Data;
+using System.Globalization;
+using DiscoverGeorgia.API.Data;
 using DiscoverGeorgia.API.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace DiscoverGeorgia.API.Controllers
 {
@@ -10,50 +10,66 @@ namespace DiscoverGeorgia.API.Controllers
     public class PlacesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IWebHostEnvironment _env;
 
-        public PlacesController(AppDbContext context)
+        public PlacesController(AppDbContext context, IWebHostEnvironment env)
         {
             _context = context;
+            _env = env;
         }
 
-        // GET: api/Places  ან  api/Places?categoryId=1
+        // GET: api/Places
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Place>>> GetPlaces([FromQuery] int? categoryId)
+        public IActionResult GetPlaces()
         {
-            var query = _context.Places.AsQueryable();
-
-            if (categoryId.HasValue)
+            var csvPath = Path.Combine(_env.ContentRootPath, "Data", "places.csv");
+            if (!System.IO.File.Exists(csvPath))
             {
-                query = query.Where(p => p.CategoryId == categoryId.Value);
+                return NotFound("places.csv file not found.");
             }
 
-            return await query.ToListAsync();
-        }
+            var lines = System.IO.File.ReadAllLines(csvPath);
+            if (lines.Length <= 1) return Ok(new List<object>());
 
-        // GET: api/Places  ან  api/Places?lang=en  ან  api/Places?categoryId=1
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Place>>> GetPlaces([FromQuery] int? categoryId, [FromQuery] string lang = "ka")
-        {
-            var query = _context.Places.AsQueryable();
+            var header = lines[0].Split(';');
+            var result = new List<Dictionary<string, object?>>();
 
-            if (categoryId.HasValue)
+            for (int i = 1; i < lines.Length; i++)
             {
-                query = query.Where(p => p.CategoryId == categoryId.Value);
-            }
+                var line = lines[i];
+                if (string.IsNullOrWhiteSpace(line)) continue;
 
-            var places = await query.ToListAsync();
+                var parts = line.Split(';');
+                if (parts.Length < header.Length) continue;
 
-            // თუ ფრონტენდი ითხოვს ინგლისურს (lang=en)
-            if (lang.ToLower() == "en")
-            {
-                foreach (var p in places)
+                var dict = new Dictionary<string, object?>();
+                for (int j = 0; j < header.Length; j++)
                 {
-                    if (!string.IsNullOrEmpty(p.NameEn)) p.Name = p.NameEn;
-                    if (!string.IsNullOrEmpty(p.DescriptionEn)) p.Description = p.DescriptionEn;
+                    var colName = header[j].Trim();
+                    var val = parts[j].Trim('"');
+
+                    if (colName == "lat" || colName == "lng" || colName == "coord_x" || colName == "coord_y" || colName == "rating")
+                    {
+                        if (double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out var num))
+                        {
+                            dict[colName] = num;
+                        }
+                        else dict[colName] = 0;
+                    }
+                    else if (colName == "hidden" || colName == "is_local")
+                    {
+                        if (bool.TryParse(val, out var b)) dict[colName] = b;
+                        else dict[colName] = false;
+                    }
+                    else
+                    {
+                        dict[colName] = val;
+                    }
                 }
+                result.Add(dict);
             }
 
-            return Ok(places);
+            return Ok(result);
         }
     }
 }
